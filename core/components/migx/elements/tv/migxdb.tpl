@@ -116,45 +116,24 @@ Ext.extend(MODx.loadMIGXdbGridButton,Ext.Button,{
 Ext.reg('modx-button-load-migxdb-grid',MODx.loadMIGXdbGridButton);
 
 
-//load migx-lang into modx-lang
-Ext.onReady(function() {
-var lang = {/literal}{$migx_lang}{literal};
-for (var name in lang) {
-    MODx.lang[name] = lang[name];
-}
-  
-});
 
-loadGridButton = MODx.load({
+Ext.onReady(function() {
+	//load migx-lang into modx-lang
+	var lang = {/literal}{$migx_lang}{literal};
+	for (var name in lang) {
+		MODx.lang[name] = lang[name];
+	}
+	//load migx grid button
+	loadGridButton = MODx.load({
         xtype: 'modx-button-load-migxdb-grid'
         ,renderTo: 'tvpanel{/literal}{$tv->id}{literal}'
         ,text: '{/literal}{$i18n_migx_loadgrid}{literal}'
-});   
+	});   
 
-if ('{/literal}{$customconfigs.gridload_mode}{literal}' == '2'){
-    loadGridButton.loadGrid(true);
-}
-
-
-        /*
-        MODx.load({
-            xtype: 'modx-grid-multitvdbgrid'
-            ,renderTo: 'tvpanel{/literal}{$tv->id}{literal}'
-            ,tv: '{/literal}{$tv->id}{literal}'
-            ,cls:'tv{/literal}{$tv->id}{literal}_items'
-            ,id:'tv{/literal}{$tv->id}{literal}_items'
-			,columns:Ext.util.JSON.decode('{/literal}{$columns}{literal}')
-			,pathconfigs:Ext.util.JSON.decode('{/literal}{$pathconfigs}{literal}')
-            ,fields:Ext.util.JSON.decode('{/literal}{$fields}{literal}')
-            ,wctx: '{/literal}{$myctx}{literal}'
-            ,url: '{/literal}{$config.connectorUrl}{literal}'
-            ,configs: '{/literal}{$properties.configs}{literal}'
-            ,auth: '{/literal}{$auth}{literal}'
-            ,resource_id: '{/literal}{$resource.id}{literal}' 
-            ,pageSize: 10			
-        });
-        */
-
+	if ('{/literal}{$customconfigs.gridload_mode}{literal}' == '2'){
+		loadGridButton.loadGrid(true);
+	}
+});
 
 {/literal}
 </script>
