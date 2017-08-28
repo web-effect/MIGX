@@ -241,8 +241,68 @@ class Migx {
         return $rows;
     }
 
-    public function renderOutput($rows, $scriptProperties) {
+    public function checkGrouping($fields, $groupingField, $key, &$oldgroupvalue, &$group_keys, $output, $level = 0) {
+        if (!empty($groupingField)) {
+            $newgroupvalue = isset($fields[$groupingField]) ? $fields[$groupingField] : '';
+            $gr_level = empty($level) ? '' : $level;
+            
+            /*
+            print_r($oldgroupvalue);
+            echo 'old:' . $oldgroupvalue[$level];
+            echo ' ';
+            echo 'new:' . $newgroupvalue;
+            echo ' ';
+            echo $gr_level;
+            echo ' ';
+            echo $level . ' - ';
+            */
 
+            if ($oldgroupvalue[$level] == $newgroupvalue) {
+                //still the same group
+                if ($fields['_last']) {
+                    //last item at all
+                    $group_keys[$level][] = $key;
+                    $group_count = count($group_keys[$level]);
+                    $group_idx = 1;
+                    foreach ($group_keys[$level] as $group_key) {
+                        $output[$group_key]['_groupcount' . $gr_level] = $group_count;
+                        $output[$group_key]['_groupidx' . $gr_level] = $group_idx;
+                        $output[$group_key]['_groupfirst' . $gr_level] = $group_idx == 1 ? true : '';
+                        $output[$group_key]['_grouplast' . $gr_level] = $group_idx == $group_count ? true : '';
+                        $group_idx++;
+                    }
+                }
+            } else {
+                //new group has started
+                $group_count = count($group_keys[$level]);
+                $group_idx = 1;
+                foreach ($group_keys[$level] as $group_key) {
+                    $output[$group_key]['_groupcount' . $gr_level] = $group_count;
+                    $output[$group_key]['_groupidx' . $gr_level] = $group_idx;
+                    $output[$group_key]['_groupfirst' . $gr_level] = $group_idx == 1 ? true : '';
+                    $output[$group_key]['_grouplast' . $gr_level] = $group_idx == $group_count ? true : '';
+                    $group_idx++;
+                }
+
+                if ($fields['_last']) {
+                    $output[$key]['_groupcount' . $gr_level] = 1;
+                    $output[$key]['_groupidx' . $gr_level] = 1;
+                    $output[$key]['_groupfirst' . $gr_level] = true;
+                    $output[$key]['_grouplast' . $gr_level] = true;
+                }
+
+                $oldgroupvalue[$level] = $newgroupvalue;
+                $group_keys[$level] = array();
+            }
+
+            $group_keys[$level][] = $key;
+        }
+
+
+        return $output;
+    }
+
+    public function renderOutput($rows, $scriptProperties) {
         $modx = &$this->modx;
 
         $tpl = $modx->getOption('tpl', $scriptProperties, '');
@@ -250,6 +310,11 @@ class Migx {
         $emptyTpl = $modx->getOption('emptyTpl', $scriptProperties, '');
         $tplFirst = $modx->getOption('tplFirst', $scriptProperties, '');
         $tplLast = $modx->getOption('tplLast', $scriptProperties, '');
+        $groupingField = $modx->getOption('groupingField', $scriptProperties, '');
+        $groupingField = $modx->getOption('groupingFields', $scriptProperties, $groupingField);
+        $prepareSnippet = $modx->getOption('prepareSnippet', $scriptProperties, '');
+        $totalVar = $modx->getOption('totalVar', $scriptProperties, 'total');
+        $total = $modx->getPlaceholder($totalVar);
 
         $toSeparatePlaceholders = $modx->getOption('toSeparatePlaceholders', $scriptProperties, false);
         $toPlaceholder = $modx->getOption('toPlaceholder', $scriptProperties, false);
@@ -260,18 +325,26 @@ class Migx {
 
         $addfields = $modx->getOption('addfields', $scriptProperties, '');
         $addfields = !empty($addfields) ? explode(',', $addfields) : null;
-
+        $count = count($rows);
         $properties = array();
         foreach ($scriptProperties as $property => $value) {
             $properties['property.' . $property] = $value;
         }
+        $properties['_count'] = $count;
+        $properties['_total'] = $total;
 
-        $idx = 0;
+        $idx = $modx->getOption('idx', $scriptProperties, 0);
         $output = array();
         $template = array();
-        $count = count($rows);
+
+        $groupoutput = array();
+        $group_indexes = array();
+        $groups = array();
+        $oldgroupvalue = array();
+        $group_keys = array();
+
         if ($count > 0) {
-            foreach ($rows as $fields) {
+            foreach ($rows as $key => $fields) {
 
                 if (!empty($addfields)) {
                     foreach ($addfields as $addfield) {
@@ -289,8 +362,35 @@ class Migx {
                     $idx++;
                     $fields['_first'] = $idx == 1 ? true : '';
                     $fields['_last'] = $idx == $count ? true : '';
-                    $fields['idx'] = $idx;
+                    $fields['idx'] = $fields['_idx'] = $idx;
+
+                    $fields = array_merge($fields, $properties);
+
+                    if (!empty($prepareSnippet)) {
+                        $result = $modx->runSnippet($prepareSnippet, array('fields' => &$fields));
+                    }
+
+                    $output[] = $fields;
+                    //check grouping
+
+                    $groupingFields = explode(',', $groupingField);
+                    foreach ($groupingFields as $level => $gr_field) {
+                        $output = $this->checkGrouping($fields, $gr_field, $key, $oldgroupvalue, $group_keys, $output, $level);
+                    }
+
+
+                }
+            }
+
+            if ($toJsonPlaceholder) {
+
+            } else {
+                $rows = $output;
+                $output = array();
+                foreach ($rows as $fields) {
+
                     $rowtpl = '';
+                    $idx = isset($fields['idx']) ? $fields['idx'] : 0;
                     //get changing tpls from field
                     if (substr($tpl, 0, 7) == "@FIELD:") {
                         $tplField = substr($tpl, 7);
@@ -321,8 +421,6 @@ class Migx {
                             }
                         }
                     }
-
-                    $fields = array_merge($fields, $properties);
 
                     //get changing tpls by running a snippet to determine the current tpl
                     if (substr($tpl, 0, 9) == "@SNIPPET:") {
@@ -404,6 +502,7 @@ class Migx {
         }
 
         return $o;
+
     }
 
     function findProcessor($processorspath, $filename, &$filenames) {
@@ -417,6 +516,8 @@ class Migx {
     function findCustomFile($defaultpath, $filename, &$filenames, $type = 'processors') {
         $config = $this->customconfigs;
         $packageName = $this->modx->getOption('packageName', $config);
+        $packageName = explode(',', $packageName);
+        $packageName = $packageName[0];
         $task = $this->getTask();
         if (!empty($packageName)) {
             $packagepath = $this->modx->getOption('core_path') . 'components/' . $packageName . '/';
@@ -498,11 +599,7 @@ class Migx {
             $c = $this->modx->newQuery($classname);
             $c->select($this->modx->getSelectColumns($classname, $classname));
             $c->where(array('id:IN' => $mf_configs));
-<<<<<<< HEAD
             $c->sortby('FIELD(' . $classname . '.id, ' . implode(',', $mf_configs) . ')');
-=======
-            $c->sortby('FIELD('.$classname.'.id, '.implode(',',$mf_configs).')');
->>>>>>> origin/master
             $formnames = array();
             if ($collection = $this->modx->getCollection($classname, $c)) {
                 $idx = 0;
@@ -608,6 +705,8 @@ class Migx {
                 $extended = $this->configsObject->get('extended');
                 $packageName = $this->modx->getOption('packageName', $extended, '');
                 if (!empty($packageName)) {
+                    $packageName = explode(',', $packageName);
+                    $packageName = $packageName[0];
                     $configFile = $this->modx->getOption('core_path') . 'components/' . $packageName . '/migxconfigs/grid/grid.' . $config . '.config.inc.php'; // [ file ]
                     if (file_exists($configFile)) {
                         include ($configFile);
@@ -632,6 +731,8 @@ class Migx {
                     $packageName = $this->modx->getOption('packageName', $extended, '');
                 }
                 if (isset($packageName)) {
+                    $packageName = explode(',', $packageName);
+                    $packageName = $packageName[0];
                     $packagepath = $this->modx->getOption('core_path') . 'components/' . $packageName . '/';
                     $configpath = $packagepath . 'migxconfigs/';
                 }
@@ -1570,6 +1671,18 @@ class Migx {
 
     function createForm(&$tabs, &$record, &$allfields, &$categories, $scriptProperties) {
         $fieldid = 0;
+        $config = $this->customconfigs;
+        $hooksnippets = $this->modx->fromJson($this->modx->getOption('hooksnippets', $config, ''));
+        if (is_array($hooksnippets)) {
+            $hooksnippet_beforecreateform = $this->modx->getOption('beforecreateform', $hooksnippets, '');
+            if (!empty($hooksnippet_beforecreateform)) {
+                $snippetProperties = array();
+                $snippetProperties['tabs'] = &$tabs;
+                $snippetProperties['record'] = &$record;
+                $snippetProperties['scriptProperties'] = &$scriptProperties;
+                $result = $this->modx->runSnippet($hooksnippet_beforecreateform, $snippetProperties);
+            }
+        }
 
         $input_prefix = $this->modx->getOption('input_prefix', $scriptProperties, '');
         $input_prefix = !empty($input_prefix) ? $input_prefix . '_' : '';
@@ -2033,13 +2146,9 @@ class Migx {
                             $tvValue = $this->modx->quote($f[1]);
                         }
                         if ($multiple) {
-                            $filterGroup[] = "(EXISTS (SELECT 1 FROM {$tmplVarResourceTbl} tvr JOIN {$tmplVarTbl} tv ON {$tvValueField} {$sqlOperator} {$tvValue} AND tv.name = {$tvName} AND tv.id = tvr.tmplvarid WHERE tvr.contentid = modResource.id) " .
-                                "OR EXISTS (SELECT 1 FROM {$tmplVarTbl} tv WHERE tv.name = {$tvName} AND {$tvDefaultField} {$sqlOperator} {$tvValue} AND tv.id NOT IN (SELECT tmplvarid FROM {$tmplVarResourceTbl} WHERE contentid = modResource.id)) " .
-                                ")";
+                            $filterGroup[] = "(EXISTS (SELECT 1 FROM {$tmplVarResourceTbl} tvr JOIN {$tmplVarTbl} tv ON {$tvValueField} {$sqlOperator} {$tvValue} AND tv.name = {$tvName} AND tv.id = tvr.tmplvarid WHERE tvr.contentid = modResource.id) " . "OR EXISTS (SELECT 1 FROM {$tmplVarTbl} tv WHERE tv.name = {$tvName} AND {$tvDefaultField} {$sqlOperator} {$tvValue} AND tv.id NOT IN (SELECT tmplvarid FROM {$tmplVarResourceTbl} WHERE contentid = modResource.id)) " . ")";
                         } else {
-                            $filterGroup = "(EXISTS (SELECT 1 FROM {$tmplVarResourceTbl} tvr JOIN {$tmplVarTbl} tv ON {$tvValueField} {$sqlOperator} {$tvValue} AND tv.name = {$tvName} AND tv.id = tvr.tmplvarid WHERE tvr.contentid = modResource.id) " .
-                                "OR EXISTS (SELECT 1 FROM {$tmplVarTbl} tv WHERE tv.name = {$tvName} AND {$tvDefaultField} {$sqlOperator} {$tvValue} AND tv.id NOT IN (SELECT tmplvarid FROM {$tmplVarResourceTbl} WHERE contentid = modResource.id)) " .
-                                ")";
+                            $filterGroup = "(EXISTS (SELECT 1 FROM {$tmplVarResourceTbl} tvr JOIN {$tmplVarTbl} tv ON {$tvValueField} {$sqlOperator} {$tvValue} AND tv.name = {$tvName} AND tv.id = tvr.tmplvarid WHERE tvr.contentid = modResource.id) " . "OR EXISTS (SELECT 1 FROM {$tmplVarTbl} tv WHERE tv.name = {$tvName} AND {$tvDefaultField} {$sqlOperator} {$tvValue} AND tv.id NOT IN (SELECT tmplvarid FROM {$tmplVarResourceTbl} WHERE contentid = modResource.id)) " . ")";
                         }
                     } elseif (count($f) == 1) {
                         $tvValue = $this->modx->quote($f[0]);
@@ -2279,7 +2388,7 @@ class Migx {
 
 
     public function prepareJoins($classname, $joins, &$c) {
-
+        $selectcolumns = array();
         if (is_array($joins)) {
             foreach ($joins as $join) {
                 $jalias = $this->modx->getOption('alias', $join, '');
@@ -2313,11 +2422,16 @@ class Migx {
                                 break;
                         }
 
-                        $c->select($c->xpdo->getSelectColumns($joinclass, $jalias, $jalias . '_', $selectfields));
+                        if ($object = $c->xpdo->newObject($joinclass)) {
+                            $columns = $object->toArray($jalias . '_');
+                            $selectcolumns = array_merge($selectcolumns, $columns);
+                            $c->select($c->xpdo->getSelectColumns($joinclass, $jalias, $jalias . '_', $selectfields));
+                        }
                     }
                 }
             }
         }
+        return $selectcolumns;
     }
 
     public function addRelatedLinkIds(&$object, &$record, $config) {
@@ -2487,9 +2601,9 @@ class Migx {
         }
     }
 
-    public function handleOrderPositions(&$xpdo,$config,$scriptProperties) {
-        $modx = & $this->modx;
-        
+    public function handleOrderPositions(&$xpdo, $config, $scriptProperties) {
+        $modx = &$this->modx;
+
         $classname = $config['classname'];
         $checkdeleted = isset($config['gridactionbuttons']['toggletrash']['active']) && !empty($config['gridactionbuttons']['toggletrash']['active']) ? true : false;
         $newpos_id = $modx->getOption('new_pos_id', $scriptProperties, 0);
@@ -2580,7 +2694,7 @@ class Migx {
             if (substr($rowtpl, 0, 6) == "@FILE:") {
                 $template[$rowtpl] = file_get_contents($this->modx->config['base_path'] . substr($rowtpl, 6));
             } elseif (substr($rowtpl, 0, 6) == "@CODE:") {
-                $template[$rowtpl] = substr($rowtpl, 6);
+                $template[$rowtpl] = str_replace(array('{{', '}}'), array('[[', ']]'), substr($rowtpl, 6));
             } elseif ($chunk = $this->modx->getObject('modChunk', array('name' => $rowtpl), true)) {
                 $template[$rowtpl] = $chunk->getContent();
             } else {

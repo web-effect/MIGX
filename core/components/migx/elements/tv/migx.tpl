@@ -1,8 +1,7 @@
 <input id="tv{$tv->id}" name="tv{$tv->id}" type="hidden" class="textfield" value="{$tv_value|escape}"{$style} tvtype="{$tv->type}" />
 <div id="tvpanel{$tv->id}" style="width:100%">
 </div>
-<div id="tvpanel2{$tv->id}">
-</div>
+
 <br/>
 
 <script type="text/javascript">
@@ -25,6 +24,7 @@ MODx.window.UpdateTvItem = function(config) {
         ,maximizable: true
         ,allowDrop: true
         ,height: '600'
+        ,constrain: true
         //,saveBtnText: _('done')
         ,forceLayout: true
         ,boxMaxHeight: '700'

@@ -292,11 +292,11 @@ Ext.extend(MODx.grid.multiTVgrid{/literal}{$tv->id}{literal},MODx.grid.LocalGrid
     ,addNewItem: function(olditem){
             if (olditem){
                 var json = '[' + Ext.util.JSON.encode(olditem) + ']';
+                var items=Ext.util.JSON.decode(json);
             }else{
-                var json = '{/literal}{$newitem|escape}{literal}';
+                var items = {/literal}{$newitem}{literal};
             }
-       
-            var items=Ext.util.JSON.decode(json);
+            
             var item = items[0];            
             var s = this.getStore();
             var addNewItemAt = '{/literal}{$customconfigs.addNewItemAt|default}{literal}';
@@ -653,7 +653,7 @@ Ext.extend(MODx.grid.multiTVgrid{/literal}{$tv->id}{literal},MODx.grid.LocalGrid
  			items.push(griddata.items[i].json);
         }
 
-        if (this.call_collectmigxitems){
+        if (this.call_collectmigxitems || this.call_collectmigxitems_once){
         items = Ext.util.JSON.encode(items); 
         MODx.Ajax.request({
             url: '{/literal}{$config.connectorUrl}{literal}'
@@ -693,7 +693,8 @@ Ext.extend(MODx.grid.multiTVgrid{/literal}{$tv->id}{literal},MODx.grid.LocalGrid
                     
                 },scope:this}
             }
-        });            
+        });
+        this.call_collectmigxitems_once = false;            
         }else{
         if (items.length >0){
            Ext.get('tv{/literal}{$tv->id}{literal}').dom.value = Ext.util.JSON.encode(items); 
