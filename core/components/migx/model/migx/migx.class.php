@@ -155,7 +155,7 @@ class Migx {
         $totalVar = $modx->getOption('totalVar', $scriptProperties, 'total');
 
         $where = $modx->getOption('where', $scriptProperties, array());
-        $where = !empty($where) && !is_array($where) ? $modx->fromJSON($where) : $where;
+        //$where = !empty($where) && !is_array($where) ? $modx->fromJSON($where) : $where;
         $queries = $modx->getOption('queries', $scriptProperties, array());
         $queries = !empty($queries) && !is_array($queries) ? $modx->fromJSON($queries) : $queries;
         $sortConfig = $modx->getOption('sortConfig', $scriptProperties, array());
@@ -184,11 +184,19 @@ class Migx {
         }
 
         if (!empty($where)) {
-            foreach ($where as $key => $value) {
-                if (strstr($key, 'MONTH') || strstr($key, 'YEAR') || strstr($key, 'DATE')) {
-                    $c->where($key . " = " . $value, xPDOQuery::SQL_AND);
-                    unset($where[$key]);
+
+            if (is_string($where) && ($where[0] == '{' || $where[0] == '[')) {
+                $where = json_decode($where, true);
+            }
+            if (is_array($where)) {
+                foreach ($where as $key => $value) {
+                    if (strstr($key, 'MONTH') || strstr($key, 'YEAR') || strstr($key, 'DATE')) {
+                        $c->where($key . " = " . $value, xPDOQuery::SQL_AND);
+                        unset($where[$key]);
+                    }
                 }
+            } else {
+               $where = array($where);
             }
             $c->where($where);
         }
@@ -233,6 +241,7 @@ class Migx {
 
     public function getCollection($c) {
         $rows = array();
+        $this->modx->exec('SET SQL_BIG_SELECTS = 1');
         if ($c->stmt->execute()) {
             if (!$rows = $c->stmt->fetchAll(PDO::FETCH_ASSOC)) {
                 $rows = array();
@@ -318,10 +327,13 @@ class Migx {
 
         $toSeparatePlaceholders = $modx->getOption('toSeparatePlaceholders', $scriptProperties, false);
         $toPlaceholder = $modx->getOption('toPlaceholder', $scriptProperties, false);
+        $toPlaceholders = $modx->getOption('toPlaceholders', $scriptProperties, false);
         $outputSeparator = $modx->getOption('outputSeparator', $scriptProperties, '');
         //$placeholdersKeyField = $modx->getOption('placeholdersKeyField', $scriptProperties, 'MIGX_id');
         $placeholdersKeyField = $modx->getOption('placeholdersKeyField', $scriptProperties, 'id');
         $toJsonPlaceholder = $modx->getOption('toJsonPlaceholder', $scriptProperties, false);
+        $processedToJson = $modx->getOption('processedFieldsToJson', $scriptProperties, false);
+        $createChunk = $modx->getOption('createChunk', $scriptProperties, false);
 
         $addfields = $modx->getOption('addfields', $scriptProperties, '');
         $addfields = !empty($addfields) ? explode(',', $addfields) : null;
@@ -355,7 +367,7 @@ class Migx {
                     }
                 }
 
-                if ($toJsonPlaceholder) {
+                if ($toJsonPlaceholder && !$processedToJson) {
                     $output[] = $fields;
                 } else {
                     $fields['_alt'] = $idx % 2;
@@ -387,7 +399,31 @@ class Migx {
             } else {
                 $rows = $output;
                 $output = array();
+                $i = 0;
                 foreach ($rows as $fields) {
+                    if ($i==0 && $createChunk){
+                        if ($chunk = $modx->getObject('modChunk',array('name'=>$createChunk))){
+
+                        }else{
+                            $ph_prefix = !empty($toPlaceholders) ? $toPlaceholders . '.' : '';
+                            $chunk = $modx->newObject('modChunk');
+                            $chunk->set('name',$createChunk);
+                            $chunk_content = array();
+                            foreach ($fields as $field=>$value){
+                                $chunk_content[] = '[[+' . $ph_prefix . $field . ']]';
+                            }
+                            $chunk->set('content',implode("\n",$chunk_content));
+                            $chunk->save();
+                        }
+                    }
+                    if ($toPlaceholders){
+                        //works only for one row - output the fields to placeholders
+                        if ($toPlaceholders == 'print_r'){
+                            return '<pre>' . print_r($fields, 1) . '</pre>';
+                        }
+                        $modx->toPlaceholders($fields, $toPlaceholders);
+                        return '';
+                    }
 
                     $rowtpl = '';
                     $idx = isset($fields['idx']) ? $fields['idx'] : 0;
@@ -403,6 +439,7 @@ class Migx {
                     if ($fields['_last'] && empty($rowtpl) && !empty($tplLast)) {
                         $rowtpl = $tplLast;
                     }
+
                     $tplidx = 'tpl_' . $idx;
                     if (empty($rowtpl) && !empty($scriptProperties[$tplidx])) {
                         $rowtpl = $scriptProperties[$tplidx];
@@ -454,6 +491,7 @@ class Migx {
                             $output[] = '<pre>' . print_r($fields, 1) . '</pre>';
                         }
                     }
+                    $i++;
                 }
             }
         }
@@ -604,6 +642,7 @@ class Migx {
             if ($collection = $this->modx->getCollection($classname, $c)) {
                 $idx = 0;
                 $formtabs = false;
+                $firstformtabs = array();                
 
                 foreach ($collection as $object) {
 
@@ -633,6 +672,18 @@ class Migx {
                 }
 
                 $formtabs = $formtabs ? $formtabs : $firstformtabs;
+ 
+                $config = $this->customconfigs; 
+                $hooksnippets = $this->modx->fromJson($this->modx->getOption('hooksnippets', $config, ''));       
+                
+                if (is_array($hooksnippets)) {
+                    $hooksnippet = $this->modx->getOption('getformnames', $hooksnippets, '');
+                    if (!empty($hooksnippet)) {
+                        $snippetProperties = array();
+                        $snippetProperties['formnames'] = &$formnames;
+                        $result = $this->modx->runSnippet($hooksnippet, $snippetProperties);
+                    }
+                }                
 
                 $controller->setPlaceholder('formnames', $formnames);
 
@@ -1459,7 +1510,7 @@ class Migx {
         $controller->setPlaceholder('migx_lang', $this->modx->toJSON($this->migxlang));
         $controller->setPlaceholder('properties', $properties);
         $controller->setPlaceholder('resource', $resource);
-        $controller->setPlaceholder('configs', $this->config['configs']);
+        $controller->setPlaceholder('configs', $this->modx->getOption('configs', $this->config, ''));
         $controller->setPlaceholder('reqConfigs', $this->modx->getOption('configs', $_REQUEST, ''));
         $controller->setPlaceholder('object_id', $this->modx->getOption('object_id', $_REQUEST, ''));
         $controller->setPlaceholder('reqTempParams', $this->modx->getOption('tempParams', $_REQUEST, ''));
@@ -1672,7 +1723,7 @@ class Migx {
     function createForm(&$tabs, &$record, &$allfields, &$categories, $scriptProperties) {
         $fieldid = 0;
         $config = $this->customconfigs;
-        $hooksnippets = $this->modx->fromJson($this->modx->getOption('hooksnippets', $config, ''));
+        $hooksnippets = $this->modx->fromJson($this->modx->getOption('hooksnippets', $config, ''));       
         if (is_array($hooksnippets)) {
             $hooksnippet_beforecreateform = $this->modx->getOption('beforecreateform', $hooksnippets, '');
             if (!empty($hooksnippet_beforecreateform)) {

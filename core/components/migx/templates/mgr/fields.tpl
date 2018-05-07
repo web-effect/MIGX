@@ -5,7 +5,7 @@
 {/if} 
 
 <input type="hidden" class="mulititems_grid_item_fields" name="mulititems_grid_item_fields" value='{$fields|escape}' />
-<input type="hidden" class="tvmigxid" name="tvmigxid" value='{$migxid}' />
+<input type="hidden" class="tvmigxid" name="tvmigxid" value='{$migxid|default}' />
 
 
     {foreach from=$categories item=category name=cat}
@@ -152,8 +152,6 @@ Ext.onReady(function() {
     var win = Ext.getCmp('{/literal}modx-window-mi-grid-update-{$win_id}{literal}');    
     win.tabs = tabs;
     
-	{/literal}{if $tvcount GT 0}{literal}
-    {/literal}{/if}{literal}
 });    
 // ]]>
 </script>
